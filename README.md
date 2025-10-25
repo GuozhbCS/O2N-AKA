@@ -1,1 +1,1 @@
-### Simulation codes for the paper "Privacy-Preserving Edge-Assisted Authentication and Key Agreement Scheme for Resource-Asymmetric IoT"
+### Simulation codes for the paper "One-to-Many Authentication and Key Agreement Scheme with Desynchronization-Resilience and Forward Secrecy for Multi-Device IoT"
