@@ -1,0 +1,229 @@
+(* ProVerif 2.05*)
+
+set attacker = active.
+
+free c : channel.
+
+free tagM1 : bitstring.
+free tagM2 : bitstring.
+free tagM3 : bitstring.
+free tagM4 : bitstring.
+free tagDeviceUpdateFail : bitstring.
+free jset1 : bitstring.
+
+fun h1(bitstring) : bitstring.
+fun h2(bitstring, bitstring) : bitstring.
+fun h3(bitstring, bitstring, bitstring) : bitstring.
+fun h4(bitstring, bitstring, bitstring, bitstring) : bitstring.
+fun h5(bitstring, bitstring, bitstring, bitstring, bitstring) : bitstring.
+fun hs3(bitstring, bitstring, bitstring) : bitstring.
+
+fun puf(bitstring) : bitstring [private].
+fun pdf(bitstring, bitstring, bitstring) : bitstring.
+
+fun xor(bitstring, bitstring) : bitstring.
+reduc forall x:bitstring, y:bitstring; unxor_left(xor(x,y), y) = x.
+reduc forall x:bitstring, y:bitstring; unxor_right(xor(x,y), x) = y.
+
+fun senc(bitstring, bitstring) : bitstring.
+reduc forall m:bitstring, k:bitstring; sdec(senc(m,k), k) = m.
+
+fun crt(bitstring, bitstring, bitstring, bitstring) : bitstring.
+reduc forall a:bitstring, idj:bitstring, delta:bitstring, kmod:bitstring;
+  recover_crt(crt(a,idj,delta,kmod), idj, delta, kmod) = a.
+
+event UserSendsM1(bitstring, bitstring, bitstring).
+  (* PID_i, N, ID_j *)
+event GatewayAcceptsUser(bitstring, bitstring, bitstring).
+  (* PID_i, N, ID_j *)
+
+event GatewaySendsM2(bitstring, bitstring).
+  (* ID_j, N *)
+event DeviceAcceptsGateway(bitstring, bitstring).
+  (* ID_j, N *)
+
+event DeviceSendsM3(bitstring, bitstring, bitstring).
+  (* ID_j, N, a_j *)
+event GatewayAcceptsDevice(bitstring, bitstring, bitstring).
+  (* ID_j, N, a_j *)
+
+event GatewaySendsM4(bitstring, bitstring, bitstring).
+  (* PID_i, ID_j, sk_j on gateway side *)
+event UserAcceptsGateway(bitstring, bitstring, bitstring).
+  (* PID_i, ID_j, sk_j on user side *)
+
+event UserSessionKey(bitstring).
+event DeviceSessionKey(bitstring).
+
+event GatewayKeepsPrevious(bitstring).
+  (* PID_i is retained in the gateway recovery window. *)
+event GatewayUpdatesDevice(bitstring, bitstring, bitstring).
+  (* ID_j, N, a_j: gateway commits {C_j,R_j} update after valid M3. *)
+event DeviceUpdateFailed(bitstring, bitstring).
+  (* ID_j, N: M3 is lost or rejected; gateway must not commit new device state. *)
+event GatewayKeepsOldDevice(bitstring, bitstring).
+  (* ID_j, N: gateway keeps old {C_j,R_j}. *)
+event UserUpdatesCredential(bitstring, bitstring).
+  (* PID_i^new, DTC_i^new *)
+event UserUpdateFailed(bitstring).
+  (* M4 is lost/invalid and the user keeps old PID_i,DTC_i. *)
+
+query sk:bitstring; attacker(sk) && event(UserSessionKey(sk)).
+query sk:bitstring; attacker(sk) && event(DeviceSessionKey(sk)).
+
+query pid:bitstring, n:bitstring, idj:bitstring;
+  event(GatewayAcceptsUser(pid,n,idj)) ==> event(UserSendsM1(pid,n,idj)).
+
+query idj:bitstring, n:bitstring;
+  event(DeviceAcceptsGateway(idj,n)) ==> event(GatewaySendsM2(idj,n)).
+
+query idj:bitstring, n:bitstring, a:bitstring;
+  event(GatewayAcceptsDevice(idj,n,a)) ==> event(DeviceSendsM3(idj,n,a)).
+
+query pid:bitstring, idj:bitstring, sk:bitstring;
+  event(UserAcceptsGateway(pid,idj,sk)) ==> event(GatewaySendsM4(pid,idj,sk)).
+
+query pid:bitstring, idj:bitstring, sk:bitstring;
+  event(UserAcceptsGateway(pid,idj,sk)) ==> event(DeviceSessionKey(sk)).
+
+query pid:bitstring;
+  event(UserUpdateFailed(pid)) ==> event(GatewayKeepsPrevious(pid)).
+
+query idj:bitstring, n:bitstring, a:bitstring;
+  event(GatewayUpdatesDevice(idj,n,a)) ==> event(GatewayAcceptsDevice(idj,n,a)).
+
+query idj:bitstring, n:bitstring;
+  event(DeviceUpdateFailed(idj,n)) ==> event(GatewayKeepsOldDevice(idj,n)).
+
+let processUser(idi:bitstring, pwi:bitstring, bioi:bitstring,
+                ri:bitstring, logi:bitstring, pid:bitstring,
+                dtc:bitstring, kmod:bitstring, idj:bitstring) =
+  let sigma = h1(bioi) in
+  let log_check = h4(sigma, idi, ri, pwi) in
+  if log_check = logi then
+  let x = unxor_left(dtc, ri) in
+  new n : bitstring;
+  new ts1 : bitstring;
+  let tc = h3(x, pid, ts1) in
+  let dni = senc((n, jset1, idj), tc) in
+  let ai = h5(n, pid, tc, jset1, ts1) in
+  event UserSendsM1(pid,n,idj);
+  out(c, (tagM1, pid, dni, ai, ts1));
+
+  in(c, (tag4:bitstring, dsr:bitstring, fg:bitstring, ts4:bitstring));
+  if tag4 = tagM4 then
+  let (pid_new:bitstring, sr:bitstring, delta:bitstring) = sdec(dsr, tc) in
+  let fg_check = h5(pid_new, n, sr, delta, ts4) in
+  if fg_check = fg then
+  let aj = recover_crt(sr, idj, delta, kmod) in
+  let sk = h3(n, idj, aj) in
+  let x_new = h3(x, n, ts4) in
+  let dtc_new = xor(x_new, ri) in
+  event UserUpdatesCredential(pid_new,dtc_new);
+  event UserSessionKey(sk);
+  event UserAcceptsGateway(pid,idj,sk);
+  0.
+
+let processDevice(idj:bitstring, delta:bitstring) =
+  in(c, (tag2:bitstring, dcj:bitstring, dnj:bitstring, bj:bitstring, ts2:bitstring));
+  if tag2 = tagM2 then
+  let cj = unxor_left(dcj, idj) in
+  let rj = puf(cj) in
+  let n = unxor_left(dnj, h3(rj,idj,ts2)) in
+  let bj_check = h5(n,idj,dcj,rj,ts2) in
+  if bj_check = bj then
+  event DeviceAcceptsGateway(idj,n);
+  new aj : bitstring;
+  new ts3 : bitstring;
+  let cj_new = h2(cj,ts3) in
+  let rj_new = puf(cj_new) in
+  let dj = (delta, aj) in
+  let maj = xor(dj, hs3(n,rj,ts3)) in
+  let dcrj = xor(rj_new, h3(n,dj,ts3)) in
+  let ej = h5(rj_new,idj,dj,n,ts3) in
+  let sk = h3(n,idj,aj) in
+  event DeviceSessionKey(sk);
+  event DeviceSendsM3(idj,n,aj);
+  out(c, tagM3);
+  out(c, (tagM3, maj,dcrj,ej,ts3));
+  0.
+
+let processGateway(mk:bitstring, kmod:bitstring, pid0:bitstring,
+                   ci0:bitstring, idj0:bitstring, cj0:bitstring,
+                   rj0:bitstring, delta0:bitstring) =
+  in(c, (tag1:bitstring, pid:bitstring, dni:bitstring, ai:bitstring, ts1:bitstring));
+  if tag1 = tagM1 then
+  if pid = pid0 then
+  let x = unxor_left(ci0, mk) in
+  let tc = h3(x, pid, ts1) in
+  let (n:bitstring, jset_recv:bitstring, idj:bitstring) = sdec(dni, tc) in
+  if jset_recv = jset1 then
+  if idj = idj0 then
+  let ai_check = h5(n, pid, tc, jset1, ts1) in
+  if ai_check = ai then
+  event GatewayAcceptsUser(pid,n,idj);
+
+  new ts2 : bitstring;
+  let dcj = xor(cj0,idj) in
+  let dnj = xor(n, h3(rj0,idj,ts2)) in
+  let bj = h5(n,idj,dcj,rj0,ts2) in
+  event GatewaySendsM2(idj,n);
+  out(c, (tagM2, dcj,dnj,bj,ts2));
+
+  in(c, control:bitstring);
+  if control = tagDeviceUpdateFail then
+    event GatewayKeepsOldDevice(idj,n);
+    event DeviceUpdateFailed(idj,n);
+    0
+  else
+  in(c, (tag3:bitstring, maj:bitstring, dcrj:bitstring, ej:bitstring, ts3:bitstring));
+  if tag3 = tagM3 then
+  let (delta_recv:bitstring, aj:bitstring) = unxor_left(maj, hs3(n,rj0,ts3)) in
+  if delta_recv = delta0 then
+  let rj_new = unxor_left(dcrj, h3(n,(delta_recv,aj),ts3)) in
+  let ej_check = h5(rj_new,idj,(delta_recv,aj),n,ts3) in
+  if ej_check = ej then
+  event GatewayAcceptsDevice(idj,n,aj);
+  event GatewayUpdatesDevice(idj,n,aj);
+
+  let sr = crt(aj,idj,delta_recv,kmod) in
+  new pid_new : bitstring;
+  new ts4 : bitstring;
+  let dsr = senc((pid_new,sr,delta_recv), tc) in
+  let fg = h5(pid_new,n,sr,delta_recv,ts4) in
+  let sk_g = h3(n,idj,aj) in
+
+  event GatewayKeepsPrevious(pid);
+  event GatewaySendsM4(pid,idj,sk_g);
+  out(c, (tagM4, dsr,fg,ts4));
+  event UserUpdateFailed(pid);
+  0.
+
+process
+  new idi : bitstring;
+  new pwi : bitstring;
+  new bioi : bitstring;
+  let sigma = h1(bioi) in
+  new ri : bitstring;
+  new pid0 : bitstring;
+  new ei : bitstring;
+
+  new mk : bitstring;
+  new kmod : bitstring;
+  let x0 = h3(ei,idi,ri) in
+  let ci0 = xor(x0,mk) in
+  let dtc0 = xor(x0,ri) in
+  let logi = h4(sigma,idi,ri,pwi) in
+
+  new idj : bitstring;
+  new delta0 : bitstring;
+  new cj0 : bitstring;
+  let rj0 = puf(cj0) in
+
+  (
+    processUser(idi,pwi,bioi,ri,logi,pid0,dtc0,kmod,idj)
+    |
+    processGateway(mk,kmod,pid0,ci0,idj,cj0,rj0,delta0)
+    |
+    processDevice(idj,delta0)
+  )

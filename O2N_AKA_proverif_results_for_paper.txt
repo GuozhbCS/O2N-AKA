@@ -1,0 +1,28 @@
+ProVerif 2.05 verification results for the baseline O2N-AKA model
+
+RESULT not (event(UserSessionKey(sk)) && attacker(sk)) is true.
+RESULT not (event(DeviceSessionKey(sk)) && attacker(sk)) is true.
+RESULT event(GatewayAcceptsUser(pid,n,idj)) ==> event(UserSendsM1(pid,n,idj)) is true.
+RESULT event(DeviceAcceptsGateway(idj,n)) ==> event(GatewaySendsM2(idj,n)) is true.
+RESULT event(GatewayAcceptsDevice(idj,n,a)) ==> event(DeviceSendsM3(idj,n,a)) is true.
+RESULT event(UserAcceptsGateway(pid,idj,sk)) ==> event(GatewaySendsM4(pid,idj,sk)) is true.
+RESULT event(UserAcceptsGateway(pid,idj,sk)) ==> event(DeviceSessionKey(sk)) is true.
+RESULT event(UserUpdateFailed(pid)) ==> event(GatewayKeepsPrevious(pid)) is true.
+RESULT event(GatewayUpdatesDevice(idj,n,a)) ==> event(GatewayAcceptsDevice(idj,n,a)) is true.
+RESULT event(DeviceUpdateFailed(idj,n)) ==> event(GatewayKeepsOldDevice(idj,n)) is true.
+
+Verification summary:
+Query not (event(UserSessionKey(sk)) && attacker(sk)) is true.
+Query not (event(DeviceSessionKey(sk)) && attacker(sk)) is true.
+Query event(GatewayAcceptsUser(pid,n,idj)) ==> event(UserSendsM1(pid,n,idj)) is true.
+Query event(DeviceAcceptsGateway(idj,n)) ==> event(GatewaySendsM2(idj,n)) is true.
+Query event(GatewayAcceptsDevice(idj,n,a)) ==> event(DeviceSendsM3(idj,n,a)) is true.
+Query event(UserAcceptsGateway(pid,idj,sk)) ==> event(GatewaySendsM4(pid,idj,sk)) is true.
+Query event(UserAcceptsGateway(pid,idj,sk)) ==> event(DeviceSessionKey(sk)) is true.
+Query event(UserUpdateFailed(pid)) ==> event(GatewayKeepsPrevious(pid)) is true.
+Query event(GatewayUpdatesDevice(idj,n,a)) ==> event(GatewayAcceptsDevice(idj,n,a)) is true.
+Query event(DeviceUpdateFailed(idj,n)) ==> event(GatewayKeepsOldDevice(idj,n)) is true.
+
+Note: ProVerif may print alpha-renamed variables such as sk_2, pid_2, n_3, and
+idj_4 in the raw terminal output. The variables above are the corresponding
+source-level query variables used in O2N_AKA_single_session_checked.pv.
